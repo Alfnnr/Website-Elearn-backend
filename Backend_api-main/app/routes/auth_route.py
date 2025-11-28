@@ -85,6 +85,68 @@ def login(request: UserLogin, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user": user_info
     }
+
+
+@router.post("/login/mobile")
+def login_mobile(request: UserLogin, db: Session = Depends(get_db)):
+    """
+    Login endpoint khusus untuk Android/Mobile app
+    Hanya mahasiswa yang bisa login melalui endpoint ini
+    """
+    from app.models.mahasiswa_model import Mahasiswa
+    
+    user = db.query(User).filter(User.username == request.username).first()
+    if not user or not verify_password(request.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Username atau password salah"
+        )
+
+    # Check if user is mahasiswa
+    user_role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+    if user_role != 'mahasiswa':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak. Hanya mahasiswa yang dapat login ke aplikasi mobile."
+        )
+    
+    # Get mahasiswa profile
+    mahasiswa = db.query(Mahasiswa).filter(Mahasiswa.user_id == user.id_user).first()
+    if not mahasiswa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data mahasiswa tidak ditemukan"
+        )
+    
+    # Create access token
+    access_token = create_access_token({
+        "sub": user.username,
+        "user_id": user.id_user,
+        "username": user.username,
+        "role": user_role,
+        "email": user.email,
+        "id_mahasiswa": mahasiswa.id_mahasiswa
+    })
+    
+    # Build user info
+    user_info = {
+        "id_user": user.id_user,
+        "id_mahasiswa": mahasiswa.id_mahasiswa,
+        "username": user.username,
+        "role": user_role,
+        "email": user.email,
+        "nim": mahasiswa.nim,
+        "nama": mahasiswa.nama,
+        "id_kelas": mahasiswa.id_kelas
+    }
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_info
+    }
+
+
 # from fastapi import APIRouter, Depends, HTTPException, status
 # from sqlalchemy.orm import Session
 # from app.core.database import get_db
