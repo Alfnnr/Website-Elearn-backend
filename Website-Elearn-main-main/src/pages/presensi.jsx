@@ -11,7 +11,7 @@ export default function Presensi() {
   // State untuk Generate Presensi Baru
   const [generateForm, setGenerateForm] = useState({
     id_kelas_mk: "",
-    pertemuan: "",
+    minggu: "",
     tanggal: new Date().toISOString().split('T')[0],
     waktu_mulai: "",
     waktu_selesai: ""
@@ -20,7 +20,7 @@ export default function Presensi() {
   // State untuk Filter Cek Presensi
   const [filterForm, setFilterForm] = useState({
     id_kelas_mk: "",
-    pertemuan: ""
+    minggu: ""
   });
 
   // State untuk data dari backend
@@ -82,7 +82,7 @@ export default function Presensi() {
   };
 
   const handleGeneratePresensi = async () => {
-    if (!generateForm.id_kelas_mk || !generateForm.pertemuan || !generateForm.tanggal || !generateForm.waktu_mulai || !generateForm.waktu_selesai) {
+    if (!generateForm.id_kelas_mk || !generateForm.minggu || !generateForm.tanggal || !generateForm.waktu_mulai || !generateForm.waktu_selesai) {
       alert("Mohon lengkapi semua field!");
       return;
     }
@@ -93,7 +93,7 @@ export default function Presensi() {
     // Kirim request ke backend
     const dataGenerate = {
       id_kelas_mk: parseInt(generateForm.id_kelas_mk),
-      pertemuan_ke: parseInt(generateForm.pertemuan),
+      pertemuan_ke: parseInt(generateForm.minggu),
       tanggal: generateForm.tanggal,
       waktu_mulai: generateForm.waktu_mulai,
       waktu_selesai: generateForm.waktu_selesai
@@ -120,7 +120,7 @@ export default function Presensi() {
           kelas: selectedKelasMK?.nama_kelas || result.data.kelas,
           matkul: selectedKelasMK?.nama_mk || result.data.mata_kuliah,
           kode_mk: selectedKelasMK?.kode_mk || result.data.kode_mk,
-          pertemuan: result.data.pertemuan_ke,
+          minggu: result.data.pertemuan_ke,
           tanggal: new Date(result.data.tanggal).toLocaleDateString('id-ID', { 
             weekday: 'long', 
             day: 'numeric', 
@@ -138,7 +138,7 @@ export default function Presensi() {
         // Reset form
         setGenerateForm({
           id_kelas_mk: "",
-          pertemuan: "",
+          minggu: "",
           tanggal: new Date().toISOString().split('T')[0],
           waktu_mulai: "",
           waktu_selesai: ""
@@ -157,7 +157,7 @@ export default function Presensi() {
 
   const handleLihatDetail = (presensi) => {
     // Navigasi ke halaman detail presensi dengan parameter yang benar
-    navigate(`/presensi/detail/${presensi.kode_mk}/${presensi.tanggal}/${presensi.pertemuan}`);
+    navigate(`/presensi/detail/${presensi.id_kelas_mk}/${presensi.tanggal}/${presensi.pertemuan}`);
   };
 
   const handleDeletePresensi = (presensi) => {
@@ -168,15 +168,15 @@ export default function Presensi() {
   const confirmDeletePresensi = async () => {
     if (!deleteTarget) return;
     try {
-      const url = `http://localhost:8000/presensi/delete/${deleteTarget.kode_mk}/${deleteTarget.tanggal}/${deleteTarget.pertemuan}`;
+      const url = `http://localhost:8000/presensi/delete/${deleteTarget.id_kelas_mk}/${deleteTarget.tanggal}/${deleteTarget.pertemuan}`;
       const response = await fetch(url, { method: 'DELETE' });
       const result = await response.json().catch(() => ({}));
       if (response.ok) {
-        setDaftarPresensi(prev => prev.filter(p => !(p.kode_mk === deleteTarget.kode_mk && p.tanggal === deleteTarget.tanggal && p.pertemuan === deleteTarget.pertemuan)));
+        setDaftarPresensi(prev => prev.filter(p => !(p.id_kelas_mk === deleteTarget.id_kelas_mk && p.tanggal === deleteTarget.tanggal && p.pertemuan === deleteTarget.pertemuan)));
         setDeleteSuccessInfo({
           kelas: deleteTarget.kelas,
           matkul: deleteTarget.matkul,
-          pertemuan: deleteTarget.pertemuan,
+          minggu: deleteTarget.pertemuan,
           tanggal: new Date(deleteTarget.tanggal).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
         });
         setShowDeleteModal(false);
@@ -199,8 +199,8 @@ export default function Presensi() {
   // Filter presensi
   const filteredPresensi = daftarPresensi.filter(p => {
     const kelasMKMatch = !filterForm.id_kelas_mk || p.id_kelas_mk === parseInt(filterForm.id_kelas_mk);
-    const pertemuanMatch = !filterForm.pertemuan || p.pertemuan.toString() === filterForm.pertemuan;
-    return kelasMKMatch && pertemuanMatch;
+    const mingguMatch = !filterForm.minggu || p.pertemuan.toString() === filterForm.minggu;
+    return kelasMKMatch && mingguMatch;
   });
 
   if (loading) {
@@ -253,15 +253,15 @@ export default function Presensi() {
                 )}
               </div>
 
-              {/* Pertemuan Ke */}
+              {/* Minggu Ke */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Pertemuan Ke <span className="text-red-500">*</span>
+                  Minggu Ke <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
-                  value={generateForm.pertemuan}
-                  onChange={(e) => setGenerateForm({...generateForm, pertemuan: e.target.value})}
+                  value={generateForm.minggu}
+                  onChange={(e) => setGenerateForm({...generateForm, minggu: e.target.value})}
                   min="1"
                   placeholder="Contoh: 1"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -310,7 +310,7 @@ export default function Presensi() {
 
             <button
               onClick={handleGeneratePresensi}
-              disabled={!generateForm.id_kelas_mk || !generateForm.pertemuan || !generateForm.tanggal || !generateForm.waktu_mulai || !generateForm.waktu_selesai}
+              disabled={!generateForm.id_kelas_mk || !generateForm.minggu || !generateForm.tanggal || !generateForm.waktu_mulai || !generateForm.waktu_selesai}
               className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Plus className="h-5 w-5" />
@@ -361,17 +361,17 @@ export default function Presensi() {
                 </select>
               </div>
 
-              {/* Filter Pertemuan */}
+              {/* Filter Minggu */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Pertemuan Ke
+                  Minggu Ke
                 </label>
                 <input
                   type="number"
-                  value={filterForm.pertemuan}
-                  onChange={(e) => setFilterForm({...filterForm, pertemuan: e.target.value})}
+                  value={filterForm.minggu}
+                  onChange={(e) => setFilterForm({...filterForm, minggu: e.target.value})}
                   min="1"
-                  placeholder="Semua Pertemuan"
+                  placeholder="Semua Minggu"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
@@ -400,7 +400,7 @@ export default function Presensi() {
                         </div>
                         <div className="flex items-center gap-2 bg-orange-100 text-orange-800 px-3 py-1 rounded-full">
                           <Calendar className="h-4 w-4" />
-                          <span className="text-sm font-semibold">Pertemuan {presensi.pertemuan}</span>
+                          <span className="text-sm font-semibold">Minggu {presensi.pertemuan}</span>
                         </div>
                       </div>
 
@@ -507,8 +507,8 @@ export default function Presensi() {
                 <span className="text-sm font-bold text-gray-900">{successData.matkul}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600 font-medium">Pertemuan:</span>
-                <span className="text-sm font-bold text-gray-900">Ke-{successData.pertemuan}</span>
+                <span className="text-sm text-gray-600 font-medium">Minggu:</span>
+                <span className="text-sm font-bold text-gray-900">Ke-{successData.minggu}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600 font-medium">Tanggal:</span>
@@ -570,7 +570,7 @@ export default function Presensi() {
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-sm space-y-2">
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Kelas:</span><span className="font-semibold text-gray-900">{deleteTarget.kelas}</span></div>
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Mata Kuliah:</span><span className="font-semibold text-gray-900">{deleteTarget.matkul}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600 font-medium">Pertemuan:</span><span className="font-semibold text-gray-900">Ke-{deleteTarget.pertemuan}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600 font-medium">Minggu:</span><span className="font-semibold text-gray-900">Ke-{deleteTarget.pertemuan}</span></div>
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Tanggal:</span><span className="font-semibold text-gray-900">{new Date(deleteTarget.tanggal).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
             </div>
             <div className="flex gap-3 mt-2">
@@ -602,7 +602,7 @@ export default function Presensi() {
             <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-5 mb-6 space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Kelas:</span><span className="font-bold text-gray-900">{deleteSuccessInfo.kelas}</span></div>
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Mata Kuliah:</span><span className="font-bold text-gray-900">{deleteSuccessInfo.matkul}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600 font-medium">Pertemuan:</span><span className="font-bold text-gray-900">Ke-{deleteSuccessInfo.pertemuan}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600 font-medium">Minggu:</span><span className="font-bold text-gray-900">Ke-{deleteSuccessInfo.minggu}</span></div>
               <div className="flex justify-between"><span className="text-gray-600 font-medium">Tanggal:</span><span className="font-bold text-gray-900">{deleteSuccessInfo.tanggal}</span></div>
             </div>
             <button onClick={() => { setShowDeleteSuccessModal(false); setDeleteSuccessInfo(null); }} className="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-lg font-semibold hover:from-red-700 hover:to-rose-700 transition-all transform hover:scale-105 shadow-lg">

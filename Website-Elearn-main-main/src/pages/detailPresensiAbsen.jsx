@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 export default function DetailPresensiAbsen() {
   const [activeNav, setActiveNav] = useState("presensi");
   const navigate = useNavigate();
-  const { kode_mk, tanggal, pertemuan_ke } = useParams(); // Get params from URL
+  const { id_kelas_mk, tanggal, pertemuan_ke } = useParams(); // Get params from URL
 
   const [daftarAbsen, setDaftarAbsen] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,7 +15,7 @@ export default function DetailPresensiAbsen() {
     kelas: "",
     matkul: "",
     kode_mk: "",
-    pertemuan: 0,
+    minggu: 0,
     tanggal: "",
     waktu_mulai: "",
     waktu_selesai: ""
@@ -24,11 +24,11 @@ export default function DetailPresensiAbsen() {
   // Load data dari backend
   useEffect(() => {
     loadDetailPresensi();
-  }, [kode_mk, tanggal, pertemuan_ke]);
+  }, [id_kelas_mk, tanggal, pertemuan_ke]);
 
   const loadDetailPresensi = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/presensi/detail/${kode_mk}/${tanggal}/${pertemuan_ke}`);
+      const response = await fetch(`http://localhost:8000/presensi/detail/${id_kelas_mk}/${tanggal}/${pertemuan_ke}`);
       if (response.ok) {
         const data = await response.json();
         
@@ -36,14 +36,12 @@ export default function DetailPresensiAbsen() {
           // Set data absen mahasiswa
           setDaftarAbsen(data);
           
-          // Load info mata kuliah dan kelas (dari data pertama)
-          loadInfoMatkul(kode_mk);
-          loadInfoKelas(data[0].id_mahasiswa);
+          // Load info kelas mata kuliah
+          loadInfoKelasMK(id_kelas_mk);
           
           setDetailPresensi(prev => ({
             ...prev,
-            kode_mk: kode_mk,
-            pertemuan: parseInt(pertemuan_ke),
+            minggu: parseInt(pertemuan_ke),
             tanggal: tanggal
           }));
         }
@@ -59,40 +57,20 @@ export default function DetailPresensiAbsen() {
     }
   };
 
-  const loadInfoMatkul = async (kode_mk) => {
+  const loadInfoKelasMK = async (id_kelas_mk) => {
     try {
-      const response = await fetch(`http://localhost:8000/mata-kuliah/${kode_mk}`);
+      const response = await fetch(`http://localhost:8000/kelas-mata-kuliah/${id_kelas_mk}`);
       if (response.ok) {
         const data = await response.json();
         setDetailPresensi(prev => ({
           ...prev,
-          matkul: data.nama_mk
+          kelas: data.nama_kelas,
+          matkul: data.nama_mk,
+          kode_mk: data.kode_mk
         }));
       }
     } catch (error) {
-      console.error("Error loading mata kuliah:", error);
-    }
-  };
-
-  const loadInfoKelas = async (id_mahasiswa) => {
-    try {
-      // Ambil data mahasiswa untuk mendapatkan id_kelas
-      const responseMhs = await fetch(`http://localhost:8000/mahasiswa/${id_mahasiswa}`);
-      if (responseMhs.ok) {
-        const dataMhs = await responseMhs.json();
-        
-        // Ambil data kelas
-        const responseKelas = await fetch(`http://localhost:8000/kelas/${dataMhs.id_kelas}`);
-        if (responseKelas.ok) {
-          const dataKelas = await responseKelas.json();
-          setDetailPresensi(prev => ({
-            ...prev,
-            kelas: dataKelas.nama_kelas
-          }));
-        }
-      }
-    } catch (error) {
-      console.error("Error loading kelas:", error);
+      console.error("Error loading kelas mata kuliah:", error);
     }
   };
 
@@ -103,7 +81,7 @@ export default function DetailPresensiAbsen() {
   const handleExport = () => {
     // Export data ke CSV
     const csvContent = generateCSV();
-    downloadCSV(csvContent, `Presensi_${detailPresensi.kelas}_${detailPresensi.matkul}_Pertemuan${detailPresensi.pertemuan}_${detailPresensi.tanggal}.csv`);
+    downloadCSV(csvContent, `Presensi_${detailPresensi.kelas}_${detailPresensi.matkul}_Minggu${detailPresensi.minggu}_${detailPresensi.tanggal}.csv`);
   };
 
   const generateCSV = () => {
@@ -111,7 +89,7 @@ export default function DetailPresensiAbsen() {
     let csv = `DAFTAR PRESENSI MAHASISWA\n`;
     csv += `Kelas,${detailPresensi.kelas}\n`;
     csv += `Mata Kuliah,${detailPresensi.matkul} (${detailPresensi.kode_mk})\n`;
-    csv += `Pertemuan,${detailPresensi.pertemuan}\n`;
+    csv += `Minggu,${detailPresensi.minggu}\n`;
     csv += `Tanggal,${new Date(detailPresensi.tanggal).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
     csv += `Waktu,${detailPresensi.waktu_mulai || '00:00'} - ${detailPresensi.waktu_selesai || '00:00'}\n`;
     csv += `\n`;
@@ -217,9 +195,9 @@ export default function DetailPresensiAbsen() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
-                <UserCheck className="text-blue-600" /> Detail Absensi Mahasiswa
+                <UserCheck className="text-blue-600" /> Detail Presensi Mahasiswa
               </h1>
-              <p className="text-gray-600 text-sm">Daftar kehadiran mahasiswa untuk pertemuan ini</p>
+              <p className="text-gray-600 text-sm">Daftar kehadiran mahasiswa untuk minggu ini</p>
             </div>
 
             <button
@@ -261,8 +239,8 @@ export default function DetailPresensiAbsen() {
                 <Calendar className="h-6 w-6 text-orange-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Pertemuan & Tanggal</p>
-                <p className="font-bold text-gray-900">Pertemuan {detailPresensi.pertemuan}</p>
+                <p className="text-sm text-gray-600">Minggu & Tanggal</p>
+                <p className="font-bold text-gray-900">Minggu {detailPresensi.minggu}</p>
                 <p className="text-xs text-gray-500">
                   {new Date(detailPresensi.tanggal).toLocaleDateString('id-ID', { 
                     weekday: 'long', 
