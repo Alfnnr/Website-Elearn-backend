@@ -1,0 +1,16 @@
+fastapi==0.115.2
+uvicorn==0.30.6
+SQLAlchemy==2.0.36
+pymysql==1.1.1
+passlib==1.7.4
+python-jose==3.3.0
+pydantic==2.9.2
+python-multipart==0.0.9
+
+# Face Recognition Dependencies
+tensorflow==2.20.0
+keras-facenet
+numpy==1.26.4
+scipy
+opencv-python-headless
+mtcnn

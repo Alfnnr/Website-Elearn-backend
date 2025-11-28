@@ -1,0 +1,594 @@
+// src/pages/viewMinggu.jsx
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { 
+  Calendar, ArrowLeft, Plus, FileText, AlertCircle, BookOpen,
+  Edit2, Trash2, X, Upload, CheckCircle, ChevronDown, ChevronUp, ExternalLink
+} from "lucide-react";
+import DashboardLayout from "../layouts/dashboardlayout";
+import { navigationItems } from "../navigation/navigation";
+import { apiGet, apiUpload, apiDelete } from "../utils/apiUtils";
+
+const API_BASE_URL = "http://localhost:8000";
+
+export default function ViewMinggu() {
+  const [activeNav, setActiveNav] = useState("materi");
+  const [mingguList, setMingguList] = useState([]);
+  const [mataKuliahInfo, setMataKuliahInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState("add");
+  const [selectedMinggu, setSelectedMinggu] = useState(null);
+  const [selectedMateri, setSelectedMateri] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notification, setNotification] = useState({ show: false, type: '', message: '' });
+  const [expandedMinggu, setExpandedMinggu] = useState(new Set());
+  const { kodeMk } = useParams();
+  const navigate = useNavigate();
+
+  // Form State
+  const [formData, setFormData] = useState({
+    judul: "",
+    deskripsi: "",
+    file_pdf: null,
+  });
+
+  useEffect(() => {
+    fetchMateri();
+  }, [kodeMk]);
+
+  const fetchMateri = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const materiData = await apiGet(`/materi/${kodeMk}`);
+      
+      // Buat array minggu 1-16 dengan support multiple materials
+      const mingguArray = Array.from({ length: 16 }, (_, i) => {
+        const minggu = i + 1;
+        const materiList = materiData.filter(m => m.minggu === minggu);
+        
+        return {
+          minggu,
+          hasMateri: materiList.length > 0,
+          materiCount: materiList.length,
+          materiList: materiList
+        };
+      });
+      
+      setMingguList(mingguArray);
+      
+      // Set info mata kuliah
+      if (materiData.length > 0) {
+        setMataKuliahInfo({
+          kode_mk: kodeMk,
+          nama_mk: "Loading..."
+        });
+      } else {
+        setMataKuliahInfo({
+          kode_mk: kodeMk,
+          nama_mk: "Mata Kuliah"
+        });
+      }
+      
+    } catch (error) {
+      console.error("Error fetching materi:", error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle expand minggu
+  const toggleExpandMinggu = (minggu) => {
+    setExpandedMinggu(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(minggu)) {
+        newSet.delete(minggu);
+      } else {
+        newSet.add(minggu);
+      }
+      return newSet;
+    });
+  };
+
+  // Show notification
+  const showNotification = (type, message) => {
+    setNotification({ show: true, type, message });
+    setTimeout(() => {
+      setNotification({ show: false, type: '', message: '' });
+    }, 3000);
+  };
+
+  // Open PDF in new tab
+  const handleViewPDF = (materiId) => {
+    window.open(`${API_BASE_URL}/materi/view/${materiId}`, '_blank');
+  };
+
+  // Open modal
+  const handleOpenModal = (mode, mingguNumber, materiData = null) => {
+    setModalMode(mode);
+    setSelectedMinggu(mingguNumber);
+    setSelectedMateri(materiData);
+
+    if (mode === "edit" && materiData) {
+      setFormData({
+        judul: materiData.judul || "",
+        deskripsi: materiData.deskripsi || "",
+        file_pdf: null,
+      });
+    } else {
+      setFormData({
+        judul: "",
+        deskripsi: "",
+        file_pdf: null,
+      });
+    }
+    setShowModal(true);
+  };
+
+  // Close modal
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setSelectedMinggu(null);
+    setSelectedMateri(null);
+    setFormData({ judul: "", deskripsi: "", file_pdf: null });
+  };
+
+  // Handle input change
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Handle file change
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.includes('pdf')) {
+        showNotification('error', 'File harus berformat PDF');
+        e.target.value = null;
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showNotification('error', 'Ukuran file maksimal 10MB');
+        e.target.value = null;
+        return;
+      }
+      setFormData((prev) => ({ ...prev, file_pdf: file }));
+    }
+  };
+
+  // Submit form
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.judul.trim()) {
+      showNotification('error', 'Judul materi harus diisi');
+      return;
+    }
+
+    // Validasi file PDF untuk mode add
+    if (modalMode === "add" && !formData.file_pdf) {
+      showNotification('error', 'File PDF harus diupload untuk materi baru');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const formDataToSend = new FormData();
+
+      if (modalMode === "add") {
+        formDataToSend.append("kode_mk", kodeMk);
+        formDataToSend.append("minggu", parseInt(selectedMinggu));
+        formDataToSend.append("judul", formData.judul.trim());
+        formDataToSend.append("deskripsi", formData.deskripsi?.trim() || "");
+        
+        if (formData.file_pdf) {
+          formDataToSend.append("file_pdf", formData.file_pdf);
+        }
+
+        await apiUpload("/materi/", formDataToSend, "POST");
+        showNotification('success', 'Materi berhasil ditambahkan!');
+        
+        // Auto expand minggu yang baru ditambah
+        setExpandedMinggu(prev => new Set([...prev, selectedMinggu]));
+      } else {
+        if (formData.judul) formDataToSend.append("judul", formData.judul.trim());
+        if (formData.deskripsi) formDataToSend.append("deskripsi", formData.deskripsi.trim());
+        formDataToSend.append("minggu", parseInt(selectedMinggu));
+        
+        if (formData.file_pdf) {
+          formDataToSend.append("file_pdf", formData.file_pdf);
+        }
+
+        await apiUpload(`/materi/${selectedMateri.id_materi}`, formDataToSend, "PUT");
+        showNotification('success', 'Materi berhasil diupdate!');
+      }
+
+      fetchMateri();
+      handleCloseModal();
+    } catch (error) {
+      console.error("Error saving materi:", error);
+      showNotification('error', error.message || 'Gagal menyimpan materi');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Delete materi
+  const handleDelete = async (materiData) => {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus materi "${materiData.judul}"?`)) {
+      return;
+    }
+
+    try {
+      await apiDelete(`/materi/${materiData.id_materi}`);
+      showNotification('success', 'Materi berhasil dihapus!');
+      fetchMateri();
+    } catch (error) {
+      console.error("Error deleting materi:", error);
+      showNotification('error', 'Gagal menghapus materi');
+    }
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout navigationItems={navigationItems} activeNav={activeNav} setActiveNav={setActiveNav}>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout navigationItems={navigationItems} activeNav={activeNav} setActiveNav={setActiveNav}>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-red-800 mb-1">Error Loading Data</h3>
+            <p className="text-red-600 text-sm">{error}</p>
+            <div className="flex gap-2 mt-3">
+              <button 
+                onClick={fetchMateri}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition"
+              >
+                Coba Lagi
+              </button>
+              <button 
+                onClick={() => navigate(-1)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm transition"
+              >
+                Kembali
+              </button>
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const totalMateri = mingguList.reduce((sum, m) => sum + m.materiCount, 0);
+  const mingguWithMateri = mingguList.filter(m => m.hasMateri).length;
+  const percentage = Math.round((mingguWithMateri / 16) * 100);
+
+  return (
+    <DashboardLayout navigationItems={navigationItems} activeNav={activeNav} setActiveNav={setActiveNav}>
+      {/* Notification */}
+      {notification.show && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+          <div className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
+            notification.type === 'success' 
+              ? 'bg-green-500 text-white' 
+              : 'bg-red-500 text-white'
+          }`}>
+            {notification.type === 'success' ? (
+              <CheckCircle className="h-5 w-5" />
+            ) : (
+              <AlertCircle className="h-5 w-5" />
+            )}
+            <span className="font-medium">{notification.message}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white/70 backdrop-blur-sm border border-gray-200 rounded-2xl p-8 shadow-sm">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+              <Calendar className="text-blue-600" /> Kelola Materi per Minggu
+            </h1>
+            {mataKuliahInfo && (
+              <div className="mt-2 flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-gray-500" />
+                <p className="text-gray-600 text-sm">
+                  <span className="font-semibold">Loading...</span>
+                  <span className="text-gray-400 ml-2">({mataKuliahInfo.kode_mk})</span>
+                </p>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => navigate(-1)}
+            className="text-blue-600 hover:text-blue-800 flex items-center gap-1 transition font-medium"
+          >
+            <ArrowLeft className="h-4 w-4" /> Kembali
+          </button>
+        </div>
+
+        {/* Status Summary - DIPINDAH KE ATAS */}
+        <div className="mb-6 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">{totalMateri}</div>
+              <p className="text-sm text-gray-600">Total Materi</p>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600">{mingguWithMateri}</div>
+              <p className="text-sm text-gray-600">Minggu Terisi</p>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-purple-600">{percentage}%</div>
+              <p className="text-sm text-gray-600">Kelengkapan</p>
+            </div>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-blue-500 to-green-500 h-full transition-all duration-500 flex items-center justify-end pr-2"
+              style={{ width: `${percentage}%` }}
+            >
+              {percentage > 10 && (
+                <span className="text-xs font-bold text-white">{percentage}%</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Info Tips */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <p className="text-sm text-blue-800">
+            💡 <span className="font-semibold">Tips:</span> Klik judul materi untuk membuka PDF di tab baru. 
+            Setiap minggu dapat memiliki{" "}
+            <span className="font-semibold text-purple-700">lebih dari 1 materi</span>.
+          </p>
+        </div>
+
+        {/* Grid Minggu */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {mingguList.map((item) => (
+            <div
+              key={item.minggu}
+              className={`
+                border-2 rounded-xl transition-all
+                ${item.hasMateri 
+                  ? 'border-green-400 bg-green-50' 
+                  : 'border-gray-300 bg-white hover:bg-blue-50 hover:border-blue-400'
+                }
+              `}
+            >
+              {/* Header Minggu */}
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`text-2xl font-bold ${
+                      item.hasMateri ? 'text-green-700' : 'text-gray-600'
+                    }`}>
+                      {item.minggu}
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Minggu</p>
+                      {item.hasMateri && (
+                        <p className="text-xs font-semibold text-green-600">
+                          {item.materiCount} Materi
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {item.hasMateri ? (
+                    <button
+                      onClick={() => toggleExpandMinggu(item.minggu)}
+                      className="text-green-600 hover:text-green-700 transition"
+                    >
+                      {expandedMinggu.has(item.minggu) ? (
+                        <ChevronUp className="h-5 w-5" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5" />
+                      )}
+                    </button>
+                  ) : (
+                    <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                      Kosong
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Content Area */}
+              <div className="p-4">
+                {/* List Materi (when expanded) */}
+                {item.hasMateri && expandedMinggu.has(item.minggu) && (
+                  <div className="space-y-2 mb-3">
+                    {item.materiList.map((materi, idx) => (
+                      <div 
+                        key={materi.id_materi}
+                        className="bg-white border border-green-200 rounded-lg p-3 hover:shadow-md transition"
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <FileText className="h-3 w-3 text-green-600 flex-shrink-0" />
+                              {/* Clickable title untuk membuka PDF */}
+                              <button
+                                onClick={() => handleViewPDF(materi.id_materi)}
+                                className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left truncate flex items-center gap-1 group"
+                                title={`Klik untuk membuka: ${materi.judul}`}
+                              >
+                                <span className="truncate">{materi.judul}</span>
+                                <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </button>
+                            </div>
+                            {materi.deskripsi && (
+                              <p className="text-xs text-gray-600 line-clamp-2">
+                                {materi.deskripsi}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleOpenModal("edit", item.minggu, materi)}
+                            className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1.5 rounded text-xs flex items-center justify-center gap-1 transition"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(materi)}
+                            className="flex-1 bg-red-500 hover:bg-red-600 text-white px-2 py-1.5 rounded text-xs flex items-center justify-center gap-1 transition"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Collapsed view - show count */}
+                {item.hasMateri && !expandedMinggu.has(item.minggu) && (
+                  <div className="text-center py-2">
+                    <p className="text-sm text-green-700 font-medium">
+                      Klik ↓ untuk melihat {item.materiCount} materi
+                    </p>
+                  </div>
+                )}
+
+                {/* Add Button - Always visible */}
+                <button
+                  onClick={() => handleOpenModal("add", item.minggu)}
+                  className={`w-full px-3 py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition font-medium ${
+                    item.hasMateri
+                      ? 'bg-green-600 hover:bg-green-700 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  <Plus className="h-4 w-4" />
+                  {item.hasMateri ? 'Tambah Materi Lagi' : 'Tambah Materi'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal Form */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-800">
+                {modalMode === "add" ? "Tambah Materi" : "Edit Materi"}
+                <span className="text-blue-600"> - Minggu {selectedMinggu}</span>
+              </h3>
+              <button
+                onClick={handleCloseModal}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Judul Materi <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="judul"
+                  value={formData.judul}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  placeholder="Contoh: Pengenalan HTML & CSS"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Deskripsi
+                </label>
+                <textarea
+                  name="deskripsi"
+                  value={formData.deskripsi}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"
+                  rows="3"
+                  placeholder="Deskripsi singkat tentang materi ini..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  File PDF {modalMode === "edit" && "(Opsional)"}
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-blue-400 transition">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileChange}
+                    className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                    <Upload className="h-3 w-3" />
+                    Maksimal 10MB, format PDF
+                  </p>
+                  {formData.file_pdf && (
+                    <p className="text-xs text-green-600 mt-1 font-medium">
+                      ✓ {formData.file_pdf.name} dipilih
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2.5 rounded-lg font-semibold transition"
+                  disabled={saving}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    modalMode === "add" ? "Tambah Materi" : "Update Materi"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </DashboardLayout>
+  );
+}
