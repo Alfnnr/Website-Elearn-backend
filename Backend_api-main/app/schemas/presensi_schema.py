@@ -30,6 +30,8 @@ class PresensiDetailResponse(BaseModel):
     nama_mahasiswa: str
     status: str
     waktu_input: Optional[datetime]
+    waktu_mulai: Optional[str]
+    waktu_selesai: Optional[str]
     
     class Config:
         from_attributes = True

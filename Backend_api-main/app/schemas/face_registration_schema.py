@@ -12,10 +12,7 @@ class FaceRegistrationResponse(BaseModel):
     nim: str
     embedding_filename: str
     registration_date: datetime
-    last_verified: Optional[datetime] = None
-    verification_count: int
-    failed_attempts: int
-    is_active: bool
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

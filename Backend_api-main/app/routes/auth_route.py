@@ -94,6 +94,7 @@ def login_mobile(request: UserLogin, db: Session = Depends(get_db)):
     Hanya mahasiswa yang bisa login melalui endpoint ini
     """
     from app.models.mahasiswa_model import Mahasiswa
+    from app.models.kelas_model import Kelas
     
     user = db.query(User).filter(User.username == request.username).first()
     if not user or not verify_password(request.password, user.password):
@@ -118,6 +119,13 @@ def login_mobile(request: UserLogin, db: Session = Depends(get_db)):
             detail="Data mahasiswa tidak ditemukan"
         )
     
+    # Get kelas information if available
+    nama_kelas = None
+    if mahasiswa.id_kelas:
+        kelas = db.query(Kelas).filter(Kelas.id_kelas == mahasiswa.id_kelas).first()
+        if kelas:
+            nama_kelas = kelas.nama_kelas
+    
     # Create access token
     access_token = create_access_token({
         "sub": user.username,
@@ -137,7 +145,8 @@ def login_mobile(request: UserLogin, db: Session = Depends(get_db)):
         "email": user.email,
         "nim": mahasiswa.nim,
         "nama": mahasiswa.nama,
-        "id_kelas": mahasiswa.id_kelas
+        "id_kelas": mahasiswa.id_kelas,
+        "nama_kelas": nama_kelas
     }
     
     return {

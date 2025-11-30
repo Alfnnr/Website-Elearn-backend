@@ -236,6 +236,8 @@ def get_presensi_detail(
             p.id_mahasiswa,
             p.status,
             p.waktu_input,
+            p.waktu_mulai,
+            p.waktu_selesai,
             m.nim,
             m.nama
         FROM presensi p
@@ -260,13 +262,25 @@ def get_presensi_detail(
     
     response = []
     for result in results:
+        # Convert timedelta to string format HH:MM
+        waktu_mulai_str = str(result.waktu_mulai) if result.waktu_mulai else None
+        waktu_selesai_str = str(result.waktu_selesai) if result.waktu_selesai else None
+        
+        # Handle timedelta format (remove seconds if present)
+        if waktu_mulai_str and len(waktu_mulai_str) > 5:
+            waktu_mulai_str = waktu_mulai_str[:5]
+        if waktu_selesai_str and len(waktu_selesai_str) > 5:
+            waktu_selesai_str = waktu_selesai_str[:5]
+        
         response.append(PresensiDetailResponse(
             id_presensi=result.id_presensi,
             id_mahasiswa=result.id_mahasiswa,
             nim=result.nim,
             nama_mahasiswa=result.nama,
             status=result.status,
-            waktu_input=result.waktu_input
+            waktu_input=result.waktu_input,
+            waktu_mulai=waktu_mulai_str,
+            waktu_selesai=waktu_selesai_str
         ))
     
     return response

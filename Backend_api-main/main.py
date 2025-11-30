@@ -76,7 +76,8 @@ from app.routes import (
     user_route,
     dashboard_route,
     kelas_mata_kuliah_route,
-    face_registration_db_route
+    face_registration_db_route,
+    face_recognition_route
 )
 
 # Import models (no relationships needed)
@@ -112,6 +113,7 @@ app.include_router(presensi_route.router)
 app.include_router(mahasiswa_route.router)
 app.include_router(dashboard_route.router)
 app.include_router(face_registration_db_route.router)
+app.include_router(face_recognition_route.router)
 
 @app.get("/")
 def read_root():
@@ -128,6 +130,8 @@ def read_root():
             "presensi": "/presensi",
             "mahasiswa": "/mahasiswa",
             "materi": "/materi",
-            "dashboard": "/dashboard"
+            "dashboard": "/dashboard",
+            "face_registration": "/face-registration",
+            "face_recognition": "/face"
         }
     }
