@@ -362,6 +362,48 @@ def delete_presensi(
 # ANDROID INTEGRATION ENDPOINTS
 # ============================================
 
+@router.get("/debug/mahasiswa/{id_mahasiswa}")
+def debug_presensi_mahasiswa(
+    id_mahasiswa: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Debug endpoint untuk cek data mahasiswa dan presensinya
+    """
+    # Get mahasiswa info
+    mahasiswa = db.query(Mahasiswa).filter(Mahasiswa.id_mahasiswa == id_mahasiswa).first()
+    if not mahasiswa:
+        return {"error": "Mahasiswa tidak ditemukan"}
+    
+    # Get all presensi
+    all_presensi = db.query(Presensi).filter(Presensi.id_mahasiswa == id_mahasiswa).all()
+    
+    # Get kelas info
+    from app.models.kelas_model import Kelas
+    kelas_info = db.query(Kelas).filter(Kelas.id_kelas == mahasiswa.id_kelas).first()
+    
+    return {
+        "mahasiswa": {
+            "id_mahasiswa": mahasiswa.id_mahasiswa,
+            "nim": mahasiswa.nim,
+            "nama": mahasiswa.nama,
+            "id_kelas": mahasiswa.id_kelas,
+            "nama_kelas": kelas_info.nama_kelas if kelas_info else None
+        },
+        "total_presensi": len(all_presensi),
+        "presensi_list": [
+            {
+                "id_presensi": p.id_presensi,
+                "id_kelas_mk": p.id_kelas_mk,
+                "tanggal": str(p.tanggal),
+                "pertemuan_ke": p.pertemuan_ke,
+                "status": p.status,
+                "waktu_mulai": str(p.waktu_mulai) if p.waktu_mulai else None,
+                "waktu_selesai": str(p.waktu_selesai) if p.waktu_selesai else None
+            } for p in all_presensi
+        ]
+    }
+
 @router.get("/mahasiswa/{id_mahasiswa}", response_model=List[PresensiMahasiswaResponse])
 def get_presensi_mahasiswa(
     id_mahasiswa: int,

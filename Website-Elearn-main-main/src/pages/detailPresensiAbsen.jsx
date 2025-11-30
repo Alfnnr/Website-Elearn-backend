@@ -39,10 +39,16 @@ export default function DetailPresensiAbsen() {
           // Load info kelas mata kuliah
           loadInfoKelasMK(id_kelas_mk);
           
+          // Ambil waktu_mulai dan waktu_selesai dari data presensi pertama
+          // (semua mahasiswa di sesi yang sama memiliki waktu yang sama)
+          const firstRecord = data[0];
+          
           setDetailPresensi(prev => ({
             ...prev,
             minggu: parseInt(pertemuan_ke),
-            tanggal: tanggal
+            tanggal: tanggal,
+            waktu_mulai: firstRecord.waktu_mulai || "00:00",
+            waktu_selesai: firstRecord.waktu_selesai || "00:00"
           }));
         }
       } else {

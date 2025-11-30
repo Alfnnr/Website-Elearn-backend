@@ -42,6 +42,7 @@ export default function Sidebar({
     "jadwal-kuliah": "/jadwal-kuliah",
     presensi: "/presensi",
     materi: "/materi",
+    "profil-saya": "/profil-saya",
     "kelola-dosen": "/kelola-dosen",
     User: "/user",
   };
@@ -73,6 +74,11 @@ export default function Sidebar({
         {navigationItems.map((item) => {
           // Hide super admin only items from non-super-admin users
           if (item.superAdminOnly && userRole !== "super_admin") {
+            return null;
+          }
+
+          // Hide admin only items from non-admin users (show only to dosen/admin role)
+          if (item.adminOnly && userRole !== "admin") {
             return null;
           }
 

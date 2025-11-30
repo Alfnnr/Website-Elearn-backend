@@ -18,7 +18,7 @@ from app.schemas.dosen_schema import (
     UserDosenUpdate
 )
 from app.core.security import hash_password
-from app.utils.token_utils import require_super_admin
+from app.utils.token_utils import require_super_admin, require_admin_or_super_admin, get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -462,15 +462,22 @@ def update_dosen(
     user_id: int, 
     update_data: UserDosenUpdate, 
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_super_admin)
+    current_user: dict = Depends(require_admin_or_super_admin)
 ):
-    """Update dosen user and profile - Only super_admin"""
+    """Update dosen user and profile - Super_admin can edit anyone, admin can only edit their own profile"""
     user = db.query(User).filter(User.id_user == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
     
     if user.role != RoleEnum.admin:
         raise HTTPException(status_code=400, detail="User bukan dosen")
+    
+    # Check authorization: admin can only edit their own profile
+    if current_user.get("role") == "admin" and current_user.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Anda hanya dapat mengedit profil Anda sendiri"
+        )
     
     try:
         # Update user fields
