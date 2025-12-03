@@ -58,15 +58,15 @@ export default function Header({
             </button>
 
             {/* Logo */}
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-              <BookOpen className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center overflow-hidden">
+              <img src="/logo.png" alt="E-learn Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-lg sm:text-xl font-bold text-gray-900">
-                EduLearn
+                E-learn
               </h1>
               <p className="hidden sm:block text-sm text-gray-500">
-                Platform E-Learning Modern
+                Platform Pembelajaran Online
               </p>
             </div>
           </div>

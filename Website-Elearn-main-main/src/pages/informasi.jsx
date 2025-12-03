@@ -21,6 +21,10 @@ const Informasi = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
+  // Get current user and check role
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const isSuperAdmin = currentUser.role === 'super_admin';
+
   useEffect(() => {
     fetchInformasi();
   }, [currentPage, perPage]);
@@ -89,6 +93,23 @@ const Informasi = () => {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   };
+
+  // Redirect if not super admin
+  if (!isSuperAdmin) {
+    return (
+      <DashboardLayout
+        navigationItems={navigationItems}
+        activeNav={activeNav}
+        setActiveNav={setActiveNav}
+      >
+        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-800 mb-2">Akses Ditolak</h2>
+          <p className="text-red-600">Halaman ini hanya dapat diakses oleh Super Admin</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout
