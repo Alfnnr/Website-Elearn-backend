@@ -1,5 +1,5 @@
 // MateriEyeTracking.js - Complete PDF Version
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,14 +15,14 @@ import {
 } from 'react-native';
 import { Camera, useCameraDevice } from 'react-native-vision-camera';
 import Pdf from 'react-native-pdf';
+import { API_URL } from '../config/api';
 
 const { width, height } = Dimensions.get('window');
 
 export default function MateriEyeTracking({ route, navigation }) {
   const { materi } = route.params;
-  // If you run the Python eye-tracker server on your dev machine, set the URL here
-  // Example: 'http://192.168.1.100:5000' (replace with your PC IP) or pass via route.params.serverUrl
-  const PYTHON_SERVER_URL = route.params?.serverUrl || 'http://192.168.0.103:5000';
+  // Menggunakan API_URL dari config/api.js
+  const PYTHON_SERVER_URL = route.params?.serverUrl || API_URL;
   const useRemoteServer = route.params?.useRemoteServer ?? true; // jika true, selalu polling server untuk gaze
 
   const [isTracking, setIsTracking] = useState(false);
@@ -33,6 +33,8 @@ export default function MateriEyeTracking({ route, navigation }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [cameraReady, setCameraReady] = useState(false);
+  const [canFinish, setCanFinish] = useState(false);
+  const [timeElapsed, setTimeElapsed] = useState(0);
   
   const [trackingData, setTrackingData] = useState({
     totalTime: 0,
@@ -48,15 +50,20 @@ export default function MateriEyeTracking({ route, navigation }) {
   const [isSimulatingEyeTracking, setIsSimulatingEyeTracking] = useState(false);
   const [serverConnected, setServerConnected] = useState(null); // null = unknown, true = connected, false = disconnected
 
+  const MINIMUM_READING_TIME = 60; // 1 menit untuk testing
+
   const device = useCameraDevice('front');
+  const cameraRef = useRef(null);
   const trackingInterval = useRef(null);
   const remoteInterval = useRef(null);
+  const timerInterval = useRef(null);
   const lastFocusTime = useRef(Date.now());
   const startTime = useRef(Date.now());
   const pageStartTime = useRef(Date.now());
   const pdfRef = useRef(null);
+  const initialized = useRef(false);
 
-  // ========== PDF FUNCTIONS ==========
+  
   
   const getPdfSource = () => {
     if (materi.pdfUrl) {
@@ -153,242 +160,27 @@ export default function MateriEyeTracking({ route, navigation }) {
 
   // ========== CAMERA & TRACKING FUNCTIONS ==========
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      initializePermissions();
-    }, 100);
-
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleBackPress();
-      return true;
-    });
-
-    return () => {
-      clearTimeout(timer);
-      backHandler.remove();
-      if (trackingInterval.current) {
-        clearInterval(trackingInterval.current);
-      }
-    };
-  }, );
-
-  const initializePermissions = async () => {
-    setIsLoadingPermission(true);
-
-    try {
-      if (!Camera || typeof Camera.getCameraPermissionStatus !== 'function') {
-        console.log('Camera module not ready, using simulation mode');
-        setCameraPermission(false);
-        setIsSimulatingEyeTracking(true);
-        startTracking();
-        setIsLoadingPermission(false);
-        return;
-      }
-
-      const cameraPermissionStatus = await Camera.getCameraPermissionStatus();
-      console.log('Camera permission status:', cameraPermissionStatus);
-
-      if (cameraPermissionStatus === 'granted' || cameraPermissionStatus === 'authorized') {
-        setCameraPermission(true);
-        setCameraReady(true);
-        startTracking();
-      } else if (cameraPermissionStatus === 'not-determined') {
-        const newPermissionStatus = await Camera.requestCameraPermission();
-        console.log('New permission status:', newPermissionStatus);
-
-        if (newPermissionStatus === 'granted' || newPermissionStatus === 'authorized') {
-          setCameraPermission(true);
-          setCameraReady(true);
-          startTracking();
-        } else {
-          setCameraPermission(false);
-          setIsSimulatingEyeTracking(true);
-          startTracking();
-        }
-      } else {
-        setCameraPermission(false);
-        setIsSimulatingEyeTracking(true);
-        startTracking();
-      }
-    } catch (error) {
-      console.error('Permission initialization error:', error);
-      setCameraPermission(false);
-      setIsSimulatingEyeTracking(true);
-      startTracking();
-    } finally {
-      setIsLoadingPermission(false);
-    }
-  };
-
-  const handleRequestPermission = async () => {
-    setIsLoadingPermission(true);
-
-    try {
-      if (!Camera || typeof Camera.requestCameraPermission !== 'function') {
-        Alert.alert(
-          'Camera Not Available',
-          'Camera module is not available. Using simulation mode.',
-        );
-        setIsLoadingPermission(false);
-        return;
-      }
-
-      const permissionStatus = await Camera.requestCameraPermission();
-      console.log('Permission request result:', permissionStatus);
-
-      if (permissionStatus === 'granted' || permissionStatus === 'authorized') {
-        setCameraPermission(true);
-        setCameraReady(true);
-        setIsSimulatingEyeTracking(false);
-        startTracking();
-      } else {
-        Alert.alert(
-          'Izin Kamera Diperlukan',
-          'Untuk menggunakan eye tracking yang akurat, mohon aktifkan izin kamera di pengaturan aplikasi.',
-          [
-            { text: 'Nanti Saja', style: 'cancel' },
-            {
-              text: 'Buka Pengaturan',
-              onPress: () => Linking.openSettings(),
-            },
-          ],
-        );
-      }
-    } catch (error) {
-      console.error('Permission request error:', error);
-    } finally {
-      setIsLoadingPermission(false);
-    }
-  };
-
-  const startTracking = () => {
-    setIsTracking(true);
-    startTime.current = Date.now();
-    lastFocusTime.current = Date.now();
-    pageStartTime.current = Date.now();
-    // Mulai polling remote server bila diizinkan (terlepas dari status kamera)
-    if (useRemoteServer) {
-      startRemotePolling();
+  const handleBackPress = useCallback(() => {
+    if (!canFinish) {
+      const remainingTime = MINIMUM_READING_TIME - timeElapsed;
+      Alert.alert(
+        'Belum Selesai',
+        `Anda perlu membaca minimal ${MINIMUM_READING_TIME / 60} menit.\n\nWaktu tersisa: ${formatTime(remainingTime)}`,
+        [{ text: 'OK' }]
+      );
+      return;
     }
 
-    if (isSimulatingEyeTracking || !cameraPermission) {
-      startSimulatedTracking();
-    }
-  };
-
-  const startSimulatedTracking = () => {
-    // Try to poll a remote Python server first (if available). Fall back to random simulation.
-    trackingInterval.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${PYTHON_SERVER_URL}/gaze`, { method: 'GET' });
-        // only treat as connected when server returns 200 (fresh data)
-        if (res.status === 200) {
-          setServerConnected(true);
-          let data = null;
-          try {
-            data = await res.json();
-          } catch (e) {
-            data = null;
-          }
-
-          if (data && data.gaze_text) {
-            const isFocused = data.gaze_text === 'CENTER';
-            setCurrentFocus(isFocused);
-            updateTrackingData(isFocused);
-            return;
-          }
-        } else {
-          // 204 No Content or other statuses -> server reachable but no fresh data
-          setServerConnected(false);
-        }
-      } catch (err) {
-        // network/server not available - fall back to local random simulation
-        console.warn('Gagal terhubung ke Python server:', err.message || err);
-        setServerConnected(false);
-      }
-
-      const randomFocus = Math.random() > 0.25;
-      setCurrentFocus(randomFocus);
-      updateTrackingData(randomFocus);
-    }, 1000);
-  };
-
-  const startRemotePolling = () => {
-    // jika sudah berjalan, jangan buat lagi
-    if (remoteInterval.current) return;
-
-    remoteInterval.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${PYTHON_SERVER_URL}/gaze`, { method: 'GET' });
-        if (res.status === 200) {
-          setServerConnected(true);
-          let data = null;
-          try {
-            data = await res.json();
-          } catch (e) {
-            data = null;
-          }
-
-          if (data && data.gaze_text) {
-            const isFocused = data.gaze_text === 'CENTER';
-            // log eksplisit agar mudah dilihat di device log
-            console.log('[Remote gaze]', data);
-            setCurrentFocus(isFocused);
-            updateTrackingData(isFocused);
-            return;
-          }
-        } else {
-          // 204 or other statuses -> no fresh data
-          setServerConnected(false);
-        }
-      } catch (err) {
-        console.warn('Remote polling error:', err.message || err);
-        setServerConnected(false);
-      }
-    }, 1000);
-  };
-
-  const updateTrackingData = (isFocused) => {
-    const now = Date.now();
-
-    setTrackingData(prev => {
-      const newData = { ...prev };
-      newData.totalTime += 1;
-
-      if (isFocused) {
-        newData.focusTime += 1;
-        
-        if (currentPage > 0) {
-          newData.timePerPage[currentPage] = 
-            (newData.timePerPage[currentPage] || 0) + 1;
-        }
-      } else {
-        if (currentFocus === true) {
-          newData.distractionCount += 1;
-        }
-      }
-
-      newData.attentionScore =
-        newData.totalTime > 0
-          ? Math.round((newData.focusTime / newData.totalTime) * 100)
-          : 100;
-
-      newData.eyeMovements.push({
-        timestamp: now,
-        focused: isFocused,
-        page: currentPage,
-        simulated: isSimulatingEyeTracking || !cameraPermission,
-      });
-
-      return newData;
-    });
-  };
-
-  const handleBackPress = () => {
     setIsTracking(false);
 
     if (trackingInterval.current) {
       clearInterval(trackingInterval.current);
+    }
+    if (remoteInterval.current) {
+      clearInterval(remoteInterval.current);
+    }
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
     }
 
     const finalTimeOnPage = Math.floor((Date.now() - pageStartTime.current) / 1000);
@@ -428,6 +220,30 @@ export default function MateriEyeTracking({ route, navigation }) {
 
     console.log('Saving tracking data:', finalData);
 
+    // Simpan ke database
+    const dbPayload = {
+      id_mahasiswa: route.params?.id_mahasiswa ?? 1,
+      id_materi: materi?.id_materi ?? materi?.id ?? 1,
+      waktu_belajar: trackingData.totalTime,
+      waktu_fokus: trackingData.focusTime,
+      jumlah_gangguan: trackingData.distractionCount,
+      skor_perhatian: trackingData.attentionScore,
+      progress_scroll: readingProgress,
+      halaman_terakhir: currentPage,
+      total_halaman: totalPages,
+      tracking_mode: cameraPermission ? 'camera' : 'simulated',
+      session_start: new Date(startTime.current).toISOString(),
+      session_end: new Date().toISOString(),
+    };
+
+    saveSkorMateri(dbPayload).then(result => {
+      if (result.success) {
+        console.log('[SaveDB] ✅ Data berhasil disimpan ke database');
+      } else {
+        console.error('[SaveDB] ⚠️ Gagal menyimpan ke database:', result.error);
+      }
+    });
+
     Alert.alert(
       'Sesi Pembelajaran Selesai',
       `${materi.title}\n\n` +
@@ -444,6 +260,447 @@ export default function MateriEyeTracking({ route, navigation }) {
         },
       ],
     );
+  }, [canFinish, timeElapsed, trackingData, currentPage, totalPages, cameraPermission, materi, route.params, navigation]);
+
+  useEffect(() => {
+    // Prevent multiple initialization
+    if (initialized.current) {
+      console.log('[EyeTracking] ⚠️ Already initialized, skipping...');
+      return;
+    }
+    
+    initialized.current = true;
+    console.log('[EyeTracking] 🎯 Initializing component (first time only)');
+    
+    const timer = setTimeout(() => {
+      initializePermissions();
+    }, 100);
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBackPress();
+      return true;
+    });
+
+    return () => {
+      console.log('[EyeTracking] 🧹 Cleanup on unmount');
+      clearTimeout(timer);
+      backHandler.remove();
+      if (trackingInterval.current) {
+        clearInterval(trackingInterval.current);
+      }
+      if (remoteInterval.current) {
+        clearInterval(remoteInterval.current);
+      }
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
+      initialized.current = false;
+    };
+  }, []);
+
+  // useEffect untuk start tracking setelah permission ready
+  useEffect(() => {
+    // Jangan start jika masih loading atau belum initialized
+    if (isLoadingPermission || !initialized.current) {
+      return;
+    }
+
+    // Jangan start jika sudah tracking
+    if (isTracking) {
+      return;
+    }
+
+    // Start tracking jika camera ready ATAU simulation mode
+    if (cameraReady || isSimulatingEyeTracking) {
+      console.log('[EyeTracking] 🎬 Permission/simulation ready, starting tracking...');
+      console.log('[EyeTracking] cameraPermission:', cameraPermission, '| cameraReady:', cameraReady, '| isSimulating:', isSimulatingEyeTracking);
+      startTracking();
+    }
+  }, [cameraReady, isSimulatingEyeTracking, isLoadingPermission, isTracking, cameraPermission]);
+
+  const initializePermissions = async () => {
+    setIsLoadingPermission(true);
+
+    try {
+      if (!Camera || typeof Camera.getCameraPermissionStatus !== 'function') {
+        console.log('Camera module not ready, using simulation mode');
+        setCameraPermission(false);
+        setIsSimulatingEyeTracking(true);
+        // startTracking akan dipanggil dari useEffect yang watch isSimulatingEyeTracking
+        setIsLoadingPermission(false);
+        return;
+      }
+
+      const cameraPermissionStatus = await Camera.getCameraPermissionStatus();
+      console.log('Camera permission status:', cameraPermissionStatus);
+
+      if (cameraPermissionStatus === 'granted' || cameraPermissionStatus === 'authorized') {
+        setCameraPermission(true);
+        setCameraReady(true);
+        // startTracking akan dipanggil dari useEffect yang watch cameraReady
+      } else if (cameraPermissionStatus === 'not-determined') {
+        const newPermissionStatus = await Camera.requestCameraPermission();
+        console.log('New permission status:', newPermissionStatus);
+
+        if (newPermissionStatus === 'granted' || newPermissionStatus === 'authorized') {
+          setCameraPermission(true);
+          setCameraReady(true);
+          // startTracking akan dipanggil dari useEffect yang watch cameraReady
+        } else {
+          setCameraPermission(false);
+          setIsSimulatingEyeTracking(true);
+          // startTracking akan dipanggil dari useEffect yang watch isSimulatingEyeTracking
+        }
+      } else {
+        setCameraPermission(false);
+        setIsSimulatingEyeTracking(true);
+        // startTracking akan dipanggil dari useEffect yang watch isSimulatingEyeTracking
+      }
+    } catch (error) {
+      console.error('Permission initialization error:', error);
+      setCameraPermission(false);
+      setIsSimulatingEyeTracking(true);
+      // startTracking akan dipanggil dari useEffect yang watch isSimulatingEyeTracking
+    } finally {
+      setIsLoadingPermission(false);
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    setIsLoadingPermission(true);
+
+    try {
+      if (!Camera || typeof Camera.requestCameraPermission !== 'function') {
+        Alert.alert(
+          'Camera Not Available',
+          'Camera module is not available. Using simulation mode.',
+        );
+        setIsLoadingPermission(false);
+        return;
+      }
+
+      const permissionStatus = await Camera.requestCameraPermission();
+      console.log('Permission request result:', permissionStatus);
+
+      if (permissionStatus === 'granted' || permissionStatus === 'authorized') {
+        setCameraPermission(true);
+        setCameraReady(true);
+        setIsSimulatingEyeTracking(false);
+        // startTracking akan dipanggil dari useEffect yang watch cameraReady
+      } else {
+        Alert.alert(
+          'Izin Kamera Diperlukan',
+          'Untuk menggunakan eye tracking yang akurat, mohon aktifkan izin kamera di pengaturan aplikasi.',
+          [
+            { text: 'Nanti Saja', style: 'cancel' },
+            {
+              text: 'Buka Pengaturan',
+              onPress: () => Linking.openSettings(),
+            },
+          ],
+        );
+      }
+    } catch (error) {
+      console.error('Permission request error:', error);
+    } finally {
+      setIsLoadingPermission(false);
+    }
+  };
+
+  const startTracking = () => {
+    console.log('[EyeTracking] 🎬 Starting tracking...');
+    console.log('[EyeTracking] useRemoteServer:', useRemoteServer);
+    console.log('[EyeTracking] cameraPermission:', cameraPermission);
+    console.log('[EyeTracking] isSimulatingEyeTracking:', isSimulatingEyeTracking);
+    
+    setIsTracking(true);
+    startTime.current = Date.now();
+    lastFocusTime.current = Date.now();
+    pageStartTime.current = Date.now();
+    setTimeElapsed(0);
+    setCanFinish(false);
+    
+    // Clear existing intervals first
+    if (remoteInterval.current) {
+      console.log('[EyeTracking] Clearing existing remote interval');
+      clearInterval(remoteInterval.current);
+      remoteInterval.current = null;
+    }
+    if (trackingInterval.current) {
+      console.log('[EyeTracking] Clearing existing tracking interval');
+      clearInterval(trackingInterval.current);
+      trackingInterval.current = null;
+    }
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
+      timerInterval.current = null;
+    }
+    
+    // Start timer untuk menghitung waktu dan enable tombol selesai
+    timerInterval.current = setInterval(() => {
+      setTimeElapsed(prev => {
+        const newTime = prev + 1;
+        if (newTime >= MINIMUM_READING_TIME && !canFinish) {
+          setCanFinish(true);
+        }
+        return newTime;
+      });
+    }, 1000);
+    
+    // Mulai polling remote server bila diizinkan (terlepas dari status kamera)
+    if (useRemoteServer) {
+      console.log('[EyeTracking] Will start remote polling...');
+      startRemotePolling();
+    }
+
+    if (isSimulatingEyeTracking || !cameraPermission) {
+      console.log('[EyeTracking] Will start simulated tracking...');
+      startSimulatedTracking();
+    }
+  };
+
+  const captureAndSendFrame = async () => {
+    // Fungsi untuk menangkap frame dari kamera dan mengirim ke endpoint /predict
+    try {
+      console.log('[EyeTracking] Starting frame capture...');
+      console.log('[EyeTracking] cameraRef.current:', cameraRef.current ? 'Available' : 'NULL');
+      console.log('[EyeTracking] cameraPermission:', cameraPermission);
+      console.log('[EyeTracking] cameraReady:', cameraReady);
+      
+      if (!cameraRef.current) {
+        console.log('[EyeTracking] ❌ Camera ref not available');
+        return null;
+      }
+
+      // Capture photo dari camera
+      console.log('[EyeTracking] 📸 Taking photo...');
+      const photo = await cameraRef.current.takePhoto({
+        qualityPrioritization: 'balanced', // Change to balanced for better quality
+        flash: 'off',
+        enableAutoStabilization: true,
+      });
+      console.log('[EyeTracking] ✅ Photo captured:', photo.path);
+
+      // Buat form data untuk dikirim ke server
+      const formData = new FormData();
+      formData.append('file', {
+        uri: `file://${photo.path}`,
+        type: 'image/jpeg',
+        name: 'camera_frame.jpg',
+      });
+
+      // Kirim ke endpoint /gaze/predict
+      console.log('[EyeTracking] 🌐 Sending to server:', `${PYTHON_SERVER_URL}/gaze/predict`);
+      const response = await fetch(`${PYTHON_SERVER_URL}/gaze/predict`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log('[EyeTracking] Server response status:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        setServerConnected(true);
+        console.log('[EyeTracking] ✅ Eye tracking data received:', JSON.stringify(data));
+        return data;
+      } else {
+        setServerConnected(false);
+        const errorText = await response.text();
+        console.warn('[EyeTracking] ❌ Server response not ok:', response.status, errorText);
+        return null;
+      }
+    } catch (error) {
+      setServerConnected(false);
+      console.error('[EyeTracking] ❌ Error:', error.message || error);
+      console.error('[EyeTracking] Error stack:', error.stack);
+      return null;
+    }
+  };
+
+  const startSimulatedTracking = () => {
+    // Try to poll a remote Python server first (if available). Fall back to random simulation.
+    trackingInterval.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${PYTHON_SERVER_URL}/gaze/health`, { method: 'GET' });
+        // only treat as connected when server returns 200 (fresh data)
+        if (res.status === 200) {
+          setServerConnected(true);
+          let data = null;
+          try {
+            data = await res.json();
+          } catch (e) {
+            data = null;
+          }
+
+          if (data && data.gaze_text) {
+            const isFocused = data.gaze_text === 'CENTER';
+            setCurrentFocus(isFocused);
+            updateTrackingData(isFocused);
+            return;
+          }
+        } else {
+          // 204 No Content or other statuses -> server reachable but no fresh data
+          setServerConnected(false);
+        }
+      } catch (err) {
+        // network/server not available - fall back to local random simulation
+        console.warn('Gagal terhubung ke Python server:', err.message || err);
+        setServerConnected(false);
+      }
+
+      const randomFocus = Math.random() > 0.25;
+      setCurrentFocus(randomFocus);
+      updateTrackingData(randomFocus);
+    }, 2000);
+  };
+
+  const startRemotePolling = () => {
+    // jika sudah berjalan, jangan buat lagi
+    if (remoteInterval.current) {
+      console.log('[EyeTracking] ⚠️ Remote polling already running, skipping...');
+      return;
+    }
+
+    console.log('[EyeTracking] 🚀 Starting remote polling...');
+    console.log('[EyeTracking] Server URL:', PYTHON_SERVER_URL);
+    console.log('[EyeTracking] Interval: 2000ms');
+
+    remoteInterval.current = setInterval(async () => {
+      console.log('[EyeTracking] ⏰ Polling tick - ' + new Date().toLocaleTimeString());
+      console.log('[EyeTracking] Status - cameraPermission:', cameraPermission, '| cameraReady:', cameraReady, '| cameraRef:', cameraRef.current ? 'OK' : 'NULL');
+      
+      try {
+        // Jika kamera aktif, capture frame dan kirim ke /gaze/predict endpoint
+        if (cameraPermission && cameraReady && cameraRef.current) {
+          console.log('[EyeTracking] 📹 Camera available, attempting to capture frame...');
+          const gazeData = await captureAndSendFrame();
+          
+          if (gazeData && gazeData.gaze) {
+            setServerConnected(true);
+            const isFocused = gazeData.gaze === 'CENTER';
+            console.log('[EyeTracking] 👁️ Gaze from /gaze/predict:', gazeData.gaze, '| Focused:', isFocused);
+            setCurrentFocus(isFocused);
+            updateTrackingData(isFocused);
+            return;
+          } else {
+            console.log('[EyeTracking] ⚠️ No gaze data returned from camera capture (face not detected)');
+            // Jika wajah tidak terdeteksi = tidak fokus (user tidak melihat layar)
+            console.log('[EyeTracking] ❌ Face not detected = NOT FOCUSED');
+            setCurrentFocus(false);
+            updateTrackingData(false);
+            setServerConnected(true); // Server tetap connected meskipun tidak detect wajah
+            return;
+          }
+        } else {
+          console.log('[EyeTracking] ⚠️ Camera not ready, trying fallback /gaze/health endpoint');
+        }
+        
+        // Fallback: polling endpoint /gaze/health jika ada
+        console.log('[EyeTracking] 🌐 Fetching', `${PYTHON_SERVER_URL}/gaze/health`);
+        const res = await fetch(`${PYTHON_SERVER_URL}/gaze/health`, { method: 'GET' });
+        console.log('[EyeTracking] /gaze response status:', res.status);
+        
+        if (res.status === 200) {
+          setServerConnected(true);
+          let data = null;
+          try {
+            data = await res.json();
+          } catch (e) {
+            console.log('[EyeTracking] ❌ Failed to parse JSON:', e.message);
+            data = null;
+          }
+
+          if (data && data.gaze_text) {
+            const isFocused = data.gaze_text === 'CENTER';
+            console.log('[EyeTracking] 👁️ Gaze from /gaze/health:', data.gaze_text, '| Focused:', isFocused);
+            setCurrentFocus(isFocused);
+            updateTrackingData(isFocused);
+            return;
+          } else {
+            console.log('[EyeTracking] ⚠️ No gaze_text in response (health check only):', data);
+          }
+        } else {
+          // 204 or other statuses -> no fresh data
+          setServerConnected(false);
+          console.log('[EyeTracking] ⚠️ Server returned status:', res.status);
+        }
+      } catch (err) {
+        console.error('[EyeTracking] ❌ Polling error:', err.message || err);
+        console.error('[EyeTracking] Error details:', err);
+        setServerConnected(false);
+      }
+    }, 2000); // Interval 2 detik untuk menghindari terlalu banyak request
+    
+    console.log('[EyeTracking] ✅ Remote polling interval created');
+  };
+
+  const updateTrackingData = (isFocused) => {
+    const now = Date.now();
+
+    setTrackingData(prev => {
+      const newData = { ...prev };
+      newData.totalTime += 1;
+
+      if (isFocused) {
+        newData.focusTime += 1;
+        
+        if (currentPage > 0) {
+          newData.timePerPage[currentPage] = 
+            (newData.timePerPage[currentPage] || 0) + 1;
+        }
+      } else {
+        if (currentFocus === true) {
+          newData.distractionCount += 1;
+        }
+      }
+
+      newData.attentionScore =
+        newData.totalTime > 0
+          ? Math.round((newData.focusTime / newData.totalTime) * 100)
+          : 100;
+
+      newData.eyeMovements.push({
+        timestamp: now,
+        focused: isFocused,
+        page: currentPage,
+        simulated: isSimulatingEyeTracking || !cameraPermission,
+      });
+
+      return newData;
+    });
+  };
+
+  const saveSkorMateri = async (payload) => {
+    try {
+      console.log('[SaveDB] 📤 Menyimpan skor ke database...');
+      console.log('[SaveDB] Payload:', JSON.stringify(payload, null, 2));
+      
+      const response = await fetch(`${PYTHON_SERVER_URL}/skor-materi/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log('[SaveDB] Response status:', response.status);
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[SaveDB] ✅ Berhasil menyimpan:', JSON.stringify(result, null, 2));
+        return { success: true, data: result };
+      } else {
+        const errorText = await response.text();
+        console.error('[SaveDB] ❌ Gagal menyimpan:', response.status, errorText);
+        return { success: false, error: errorText };
+      }
+    } catch (error) {
+      console.error('[SaveDB] ❌ Error:', error.message);
+      return { success: false, error: error.message };
+    }
   };
 
   const formatTime = (seconds) => {
@@ -483,8 +740,27 @@ export default function MateriEyeTracking({ route, navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <Text style={styles.backButtonText}>← Kembali</Text>
+          <View style={styles.timerContainer}>
+            <Text style={styles.timerLabel}>⏱️ Waktu</Text>
+            <Text style={styles.timerText}>{formatTime(timeElapsed)}</Text>
+            {!canFinish && (
+              <Text style={styles.timerRemaining}>
+                Min: {formatTime(MINIMUM_READING_TIME - timeElapsed)}
+              </Text>
+            )}
+          </View>
+
+          <TouchableOpacity 
+            onPress={handleBackPress} 
+            style={[
+              styles.finishButton,
+              canFinish ? styles.finishButtonEnabled : styles.finishButtonDisabled
+            ]}
+            disabled={!canFinish}
+          >
+            <Text style={styles.finishButtonText}>
+              {canFinish ? '✓ Selesai' : '🔒 Selesai'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.trackingInfo}>
@@ -506,15 +782,27 @@ export default function MateriEyeTracking({ route, navigation }) {
           <Text style={styles.materiSubtitle}>
             {materi.subtitle || 'Pembelajaran Interaktif dengan Eye Tracking'}
           </Text>
+          {/* Server Status Indicator */}
+          <View style={styles.serverStatusContainer}>
+            <View style={[styles.serverStatusDot, { 
+              backgroundColor: serverConnected === true ? '#10B981' : serverConnected === false ? '#EF4444' : '#F59E0B' 
+            }]} />
+            <Text style={styles.serverStatusText}>
+              Server: {serverConnected === true ? 'Connected' : serverConnected === false ? 'Disconnected' : 'Connecting...'}
+            </Text>
+            <Text style={styles.serverUrlText}>({PYTHON_SERVER_URL})</Text>
+          </View>
         </View>
 
         {/* Camera container */}
         <View style={styles.cameraContainer}>
           {cameraPermission && cameraReady && device ? (
             <Camera
+              ref={cameraRef}
               style={styles.camera}
               device={device}
               isActive={isTracking}
+              photo={true}
               onError={(error) => {
                 console.error('Camera error:', error);
                 setCameraReady(false);
@@ -593,7 +881,7 @@ export default function MateriEyeTracking({ route, navigation }) {
             {(!cameraPermission || isSimulatingEyeTracking) && '(Simulasi)'}
           </Text>
           <Text style={styles.timeText}>
-            ⏱ {formatTime(trackingData.totalTime)}
+            ⏱ {formatTime(timeElapsed)}
           </Text>
         </View>
 
@@ -691,6 +979,47 @@ const styles = StyleSheet.create({
     paddingTop: 15,
     marginBottom: 15,
   },
+  timerContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  timerLabel: {
+    color: '#E0E7FF',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  timerText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  timerRemaining: {
+    color: '#FCD34D',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  finishButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 8,
+  },
+  finishButtonEnabled: {
+    backgroundColor: '#10B981',
+  },
+  finishButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  finishButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   backButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 16,
@@ -729,9 +1058,31 @@ const styles = StyleSheet.create({
     color: '#E0E7FF',
     fontSize: 14,
   },
+  serverStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  serverStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  serverStatusText: {
+    fontSize: 11,
+    color: '#E0E7FF',
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  serverUrlText: {
+    fontSize: 9,
+    color: '#C7D2FE',
+    fontStyle: 'italic',
+  },
   cameraContainer: {
     position: 'absolute',
-    top: 60,
+    top: 100,
     right: 16,
     width: 100,
     height: 75,
@@ -767,7 +1118,7 @@ const styles = StyleSheet.create({
   },
   permissionButton: {
     position: 'absolute',
-    top: 145,
+    top: 185,
     right: 16,
     backgroundColor: '#F59E0B',
     paddingHorizontal: 12,
